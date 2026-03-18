@@ -106,3 +106,13 @@ for file in "$MAPPINGS_DIR"/*.json; do
 done
 
 echo "All mappings processed."
+
+# Generate and load the documentation page — failure here is non-fatal
+echo ""
+echo "Generating documentation page..."
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if MAPPINGS_DIR="$MAPPINGS_DIR" bash "$SCRIPT_DIR/generate-docs.sh"; then
+  : # success message already printed by generate-docs.sh
+else
+  echo "Warning: Documentation page generation failed — WireMock mappings are still loaded"
+fi
