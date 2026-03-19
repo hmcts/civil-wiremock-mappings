@@ -109,10 +109,14 @@ echo "All mappings processed."
 
 # Generate and load the documentation page — failure here is non-fatal
 echo ""
-echo "Generating documentation page..."
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-if MAPPINGS_DIR="$MAPPINGS_DIR" bash "$SCRIPT_DIR/generate-docs.sh"; then
-  : # success message already printed by generate-docs.sh
+if [ ! -f "$SCRIPT_DIR/generate-docs.sh" ]; then
+  echo "Warning: generate-docs.sh not found in $SCRIPT_DIR — skipping documentation generation"
 else
-  echo "Warning: Documentation page generation failed — WireMock mappings are still loaded"
+  echo "Generating documentation page..."
+  if MAPPINGS_DIR="$MAPPINGS_DIR" bash "$SCRIPT_DIR/generate-docs.sh"; then
+    : # success message already printed by generate-docs.sh
+  else
+    echo "Warning: Documentation page generation failed — WireMock mappings are still loaded"
+  fi
 fi
