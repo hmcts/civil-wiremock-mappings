@@ -1,0 +1,28 @@
+{
+  "name": "Fee Lookup - Money Claim with keyword (fallback)",
+  "priority": 5,
+  "request": {
+    "method": "GET",
+    "urlPath": "/fees-register/fees/lookup",
+    "queryParameters": {
+      "service": { "equalTo": "other" },
+      "jurisdiction1": { "equalTo": "civil" },
+      "jurisdiction2": { "equalTo": "civil" },
+      "channel": { "equalTo": "default" },
+      "event": { "equalTo": "issue" },
+      "keyword": { "equalTo": "AnyOtherRemedy" }
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "jsonBody": {
+      "code": "FEE0450",
+      "description": "Any other remedy (County Court)",
+      "version": 5,
+      "fee_amount": 377.00
+    }
+  }
+}
