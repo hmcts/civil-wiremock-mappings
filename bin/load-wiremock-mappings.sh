@@ -6,6 +6,39 @@ MAPPINGS_DIR="./mappings"
 FILES_DIR="./__files"
 MAX_RETRIES=${MAX_RETRIES:-30}
 RETRY_INTERVAL=${RETRY_INTERVAL:-10}
+INCLUDE_DIRS="${INCLUDE_DIRS:-}"
+
+# Parse CLI arguments (--include takes precedence over env var)
+while [[ $# -gt 0 ]]; do
+  case $1 in
+    --include)
+      INCLUDE_DIRS="$2"
+      shift 2
+      ;;
+    --help|-h)
+      echo "Usage: $0 [OPTIONS]"
+      echo ""
+      echo "Options:"
+      echo "  --include <dirs>  Comma-separated list of subdirectories to include"
+      echo "                    (e.g., --include cui or --include cui,other)"
+      echo "  --help, -h        Show this help message"
+      echo ""
+      echo "Environment variables:"
+      echo "  WIREMOCK_URL      (required) URL of the WireMock server"
+      echo "  INCLUDE_DIRS      Comma-separated subdirs to include (CLI takes precedence)"
+      echo "  MAX_RETRIES       Max retries waiting for WireMock (default: 30)"
+      echo "  RETRY_INTERVAL    Seconds between retries (default: 10)"
+      echo ""
+      echo "By default, only root-level mappings are loaded. Use --include to add subdirectories."
+      exit 0
+      ;;
+    *)
+      echo "Unknown option: $1"
+      echo "Use --help for usage information"
+      exit 1
+      ;;
+  esac
+done
 
 if [ -z "$WIREMOCK_URL" ]; then
   echo "Error: WIREMOCK_URL environment variable is not set"
@@ -147,9 +180,35 @@ post_stub() {
   fi
 }
 
-# Process all JSON files recursively
+# Process JSON files based on INCLUDE_DIRS setting
 loaded_count=0
 failed_count=0
+
+# Function to find mapping files based on configuration
+find_mapping_files() {
+  # Always include root-level mappings
+  find "$MAPPINGS_DIR" -maxdepth 1 -name "*.json" -type f -print0
+  
+  # Include specified subdirectories if INCLUDE_DIRS is set
+  if [[ -n "$INCLUDE_DIRS" ]]; then
+    IFS=',' read -ra DIRS <<< "$INCLUDE_DIRS"
+    for dir in "${DIRS[@]}"; do
+      dir="${dir#"${dir%%[![:space:]]*}"}"  # trim leading whitespace
+      dir="${dir%"${dir##*[![:space:]]}"}"  # trim trailing whitespace
+      if [[ -d "$MAPPINGS_DIR/$dir" ]]; then
+        find "$MAPPINGS_DIR/$dir" -name "*.json" -type f -print0
+      else
+        echo "Warning: Directory '$MAPPINGS_DIR/$dir' not found — skipping" >&2
+      fi
+    done
+  fi
+}
+
+if [[ -n "$INCLUDE_DIRS" ]]; then
+  echo "Including subdirectories: $INCLUDE_DIRS"
+else
+  echo "Loading root-level mappings only (use --include to add subdirectories)"
+fi
 
 while IFS= read -r -d '' file; do
   echo "Processing: $file"
@@ -177,7 +236,7 @@ while IFS= read -r -d '' file; do
       failed_count=$((failed_count + 1))
     fi
   fi
-done < <(find "$MAPPINGS_DIR" -name "*.json" -type f -print0)
+done < <(find_mapping_files)
 
 echo ""
 echo "All mappings processed: $loaded_count loaded, $failed_count failed."
@@ -189,7 +248,7 @@ if [ ! -f "$SCRIPT_DIR/generate-docs.sh" ]; then
   echo "Warning: generate-docs.sh not found in $SCRIPT_DIR — skipping documentation generation"
 else
   echo "Generating documentation page..."
-  if MAPPINGS_DIR="$MAPPINGS_DIR" bash "$SCRIPT_DIR/generate-docs.sh"; then
+  if MAPPINGS_DIR="$MAPPINGS_DIR" INCLUDE_DIRS="$INCLUDE_DIRS" bash "$SCRIPT_DIR/generate-docs.sh"; then
     : # success message already printed by generate-docs.sh
   else
     echo "Warning: Documentation page generation failed — WireMock mappings are still loaded"
