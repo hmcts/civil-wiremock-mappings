@@ -6,6 +6,7 @@
 set -e
 
 MAPPINGS_DIR="${MAPPINGS_DIR:-./mappings}"
+INCLUDE_DIRS="${INCLUDE_DIRS:-}"
 
 if [ -z "$WIREMOCK_URL" ]; then
   echo "Error: WIREMOCK_URL is not set"
@@ -31,28 +32,45 @@ html_escape() {
   printf '%s' "$1" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g'
 }
 
-# Collect endpoint data from each mapping file
-for file in "$MAPPINGS_DIR"/*.json; do
-  [ -f "$file" ] || continue
+# Function to determine category based on file path and name
+get_category() {
+  local file="$1"
+  local filename
   filename=$(basename "$file" .json)
 
-  case "$filename" in
-    health*)             category="Health Checks" ;;
-    fees-lookup*|fees-range*) category="Fees Register" ;;
-    role-assignment*)    category="Role Assignment Service" ;;
-    organisation*|civilDamages*|userOrganisation*) category="Reference Data — Organisations" ;;
-    cmc-*)               category="CMC Claim Store" ;;
-    bundle-*)            category="Bundle API" ;;
-    send-letter*)        category="Send Letter" ;;
-    noc-*)               category="Notice of Change" ;;
-    lov-*)               category="Reference Data — Common Data" ;;
-    location-ref-data*)  category="Location Reference Data" ;;
-    cjes-*)              category="CJES" ;;
-    docmosis*)           category="Docmosis" ;;
-    sendgrid*)           category="SendGrid" ;;
-    *)                   category="Other" ;;
-  esac
+  # Check if file is in a subdirectory (e.g., cui/)
+  if [[ "$file" == *"/cui/"* ]]; then
+    echo "Citizen UI"
+    return
+  fi
 
+  case "$filename" in
+    health*)             echo "Health Checks" ;;
+    fees-lookup*|fees-range*) echo "Fees Register" ;;
+    role-assignment*)    echo "Role Assignment Service" ;;
+    organisation*|civilDamages*|userOrganisation*) echo "Reference Data — Organisations" ;;
+    cmc-*)               echo "CMC Claim Store" ;;
+    bundle-*)            echo "Bundle API" ;;
+    send-letter*)        echo "Send Letter" ;;
+    noc-*)               echo "Notice of Change" ;;
+    lov-*)               echo "Reference Data — Common Data" ;;
+    location-ref-data*)  echo "Location Reference Data" ;;
+    cjes-*)              echo "CJES" ;;
+    docmosis*)           echo "Docmosis" ;;
+    sendgrid*)           echo "SendGrid" ;;
+    *)                   echo "Other" ;;
+  esac
+}
+
+# Function to process a single mapping file
+process_mapping_file() {
+  local file="$1"
+  [ -f "$file" ] || return
+
+  local category
+  category=$(get_category "$file")
+
+  local name method url url_type status query_params
   name=$(jq -r '.name // ""' "$file")
   method=$(jq -r '.request.method // "ANY"' "$file")
   url=$(jq -r '.request.url // .request.urlPath // .request.urlPattern // .request.urlPathPattern // "(unknown)"' "$file")
@@ -63,7 +81,27 @@ for file in "$MAPPINGS_DIR"/*.json; do
   printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
     "$category" "$name" "$method" "$url" "$url_type" "$status" "$query_params" \
     >> "$DATA_FILE"
+}
+
+# Collect endpoint data from mapping files
+# Process root-level mappings
+for file in "$MAPPINGS_DIR"/*.json; do
+  process_mapping_file "$file"
 done
+
+# Process included subdirectories
+if [[ -n "$INCLUDE_DIRS" ]]; then
+  IFS=',' read -ra DIRS <<< "$INCLUDE_DIRS"
+  for dir in "${DIRS[@]}"; do
+    dir="${dir#"${dir%%[![:space:]]*}"}"  # trim leading whitespace
+    dir="${dir%"${dir##*[![:space:]]}"}"  # trim trailing whitespace
+    if [[ -d "$MAPPINGS_DIR/$dir" ]]; then
+      while IFS= read -r -d '' file; do
+        process_mapping_file "$file"
+      done < <(find "$MAPPINGS_DIR/$dir" -name "*.json" -type f -print0)
+    fi
+  done
+fi
 
 sort "$DATA_FILE" > "$SORTED_FILE"
 MAPPING_COUNT=$(wc -l < "$DATA_FILE" | tr -d ' ')
