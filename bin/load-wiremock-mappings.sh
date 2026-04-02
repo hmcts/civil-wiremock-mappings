@@ -49,63 +49,138 @@ else
   echo "Warning: Failed to clear existing mappings (HTTP $RESET_RESPONSE)"
 fi
 
-for file in "$MAPPINGS_DIR"/*.json; do
-  if [ -f "$file" ]; then
-    echo "Posting: $file"
+# Function to resolve bodyFileName path relative to the mapping file's directory
+resolve_body_file_path() {
+  local mapping_file="$1"
+  local body_file_name="$2"
+  local mapping_dir
+  mapping_dir=$(dirname "$mapping_file")
+  
+  # Get the relative path from MAPPINGS_DIR to the mapping file's directory
+  local rel_path="${mapping_dir#$MAPPINGS_DIR}"
+  rel_path="${rel_path#/}"
+  
+  # Try paths in order of preference:
+  # 1. Same relative path under __files (e.g., __files/cui/subdir/file.json)
+  # 2. Direct path under __files (e.g., __files/file.json)
+  if [[ -n "$rel_path" ]] && [[ -f "$FILES_DIR/$rel_path/$body_file_name" ]]; then
+    echo "$FILES_DIR/$rel_path/$body_file_name"
+  elif [[ -f "$FILES_DIR/$body_file_name" ]]; then
+    echo "$FILES_DIR/$body_file_name"
+  else
+    echo ""
+  fi
+}
 
-    BODY_FILE_NAME=$(jq -r '.response.bodyFileName // empty' "$file")
-    if [[ -n "$BODY_FILE_NAME" ]]; then
-      BODY_FILE_PATH="$FILES_DIR/$BODY_FILE_NAME"
-      if [[ -f "$BODY_FILE_PATH" ]]; then
-        echo "Inlining body from: $BODY_FILE_PATH"
-
-        if [[ "$BODY_FILE_PATH" == *.pdf ]]; then
-          echo "Inlining PDF as base64"
-          TMP_BASE64=$(mktemp)
-          # Use portable base64 encoding (works on both Linux and macOS)
-          if [[ "$OSTYPE" == "darwin"* ]]; then
-            base64 -i "$BODY_FILE_PATH" | tr -d '\n' > "$TMP_BASE64"
-          else
-            base64 -w 0 "$BODY_FILE_PATH" > "$TMP_BASE64"
-          fi
-          TMP_JSON=$(mktemp)
-          jq --rawfile base64_content "$TMP_BASE64" '
-            del(.response.bodyFileName) |
-            .response.base64Body = $base64_content
-          ' "$file" > "$TMP_JSON"
-          rm "$TMP_BASE64"
-        else
-          echo "Inlining JSON/text body"
-          TMP_JSON=$(mktemp)
-          jq --rawfile body "$BODY_FILE_PATH" '
-            del(.response.bodyFileName) |
-            .response.body = $body
-          ' "$file" > "$TMP_JSON"
-        fi
-      else
-        echo "Missing body file: $BODY_FILE_PATH"
-        continue
-      fi
+# Function to inline body file content into a stub JSON
+inline_body_file() {
+  local stub_json="$1"
+  local body_file_path="$2"
+  local tmp_json
+  tmp_json=$(mktemp)
+  
+  if [[ "$body_file_path" == *.pdf ]]; then
+    echo "Inlining PDF as base64"
+    local tmp_base64
+    tmp_base64=$(mktemp)
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+      base64 -i "$body_file_path" | tr -d '\n' > "$tmp_base64"
     else
-      TMP_JSON=$(mktemp)
-      cat "$file" > "$TMP_JSON"
+      base64 -w 0 "$body_file_path" > "$tmp_base64"
     fi
+    echo "$stub_json" | jq --rawfile base64_content "$tmp_base64" '
+      del(.response.bodyFileName) |
+      .response.base64Body = $base64_content
+    ' > "$tmp_json"
+    rm "$tmp_base64"
+  else
+    echo "Inlining JSON/text body from: $body_file_path"
+    echo "$stub_json" | jq --rawfile body "$body_file_path" '
+      del(.response.bodyFileName) |
+      .response.body = $body
+    ' > "$tmp_json"
+  fi
+  
+  cat "$tmp_json"
+  rm "$tmp_json"
+}
 
-    RESPONSE=$(curl -sk -o /dev/null -w "%{http_code}" -X POST "$WIREMOCK_URL/__admin/mappings" \
-      -H "Content-Type: application/json" \
-      --data-binary "@$TMP_JSON")
+# Function to post a single stub to WireMock
+post_stub() {
+  local stub_json="$1"
+  local source_file="$2"
+  local stub_index="$3"
+  
+  local body_file_name
+  body_file_name=$(echo "$stub_json" | jq -r '.response.bodyFileName // empty')
+  
+  local final_json="$stub_json"
+  
+  if [[ -n "$body_file_name" ]]; then
+    local body_file_path
+    body_file_path=$(resolve_body_file_path "$source_file" "$body_file_name")
+    
+    if [[ -z "$body_file_path" ]]; then
+      echo "  Warning: Missing body file '$body_file_name' for stub $stub_index in $source_file - skipping"
+      return 1
+    fi
+    
+    final_json=$(inline_body_file "$stub_json" "$body_file_path")
+  fi
+  
+  local tmp_post
+  tmp_post=$(mktemp)
+  echo "$final_json" > "$tmp_post"
+  
+  local response
+  response=$(curl -sk -o /dev/null -w "%{http_code}" -X POST "$WIREMOCK_URL/__admin/mappings" \
+    -H "Content-Type: application/json" \
+    --data-binary "@$tmp_post")
+  
+  rm "$tmp_post"
+  
+  if [ "$response" == "201" ]; then
+    return 0
+  else
+    echo "  Failed to load stub $stub_index (HTTP $response)"
+    return 1
+  fi
+}
 
-    rm "$TMP_JSON"
+# Process all JSON files recursively
+loaded_count=0
+failed_count=0
 
-    if [ "$RESPONSE" == "201" ]; then
-      echo "Mapping loaded: $file"
+while IFS= read -r -d '' file; do
+  echo "Processing: $file"
+  
+  # Check if file contains a mappings array (multi-mapping format)
+  if jq -e '.mappings' "$file" > /dev/null 2>&1; then
+    # Multi-mapping format: iterate through each stub in the array
+    stub_count=$(jq '.mappings | length' "$file")
+    echo "  Found $stub_count stubs in mappings array"
+    
+    for i in $(seq 0 $((stub_count - 1))); do
+      stub_json=$(jq -c ".mappings[$i]" "$file")
+      if post_stub "$stub_json" "$file" "$((i + 1))"; then
+        loaded_count=$((loaded_count + 1))
+      else
+        failed_count=$((failed_count + 1))
+      fi
+    done
+  else
+    # Single stub format: process directly
+    stub_json=$(jq -c '.' "$file")
+    if post_stub "$stub_json" "$file" "1"; then
+      loaded_count=$((loaded_count + 1))
     else
-      echo "Failed to load $file (HTTP $RESPONSE)"
+      failed_count=$((failed_count + 1))
     fi
   fi
-done
+done < <(find "$MAPPINGS_DIR" -name "*.json" -type f -print0)
 
-echo "All mappings processed."
+echo ""
+echo "All mappings processed: $loaded_count loaded, $failed_count failed."
 
 # Generate and load the documentation page — failure here is non-fatal
 echo ""
