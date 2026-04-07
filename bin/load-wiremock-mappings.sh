@@ -114,7 +114,7 @@ inline_body_file() {
   
   if [[ "$body_file_path" == *.pdf ]]; then
     # PDF: Use base64Body
-    echo "Inlining PDF as base64"
+    echo "  Inlining PDF as base64" >&2
     local tmp_base64
     tmp_base64=$(mktemp)
     if [[ "$OSTYPE" == "darwin"* ]]; then
@@ -129,14 +129,14 @@ inline_body_file() {
     rm "$tmp_base64"
   elif [[ "$body_file_path" == *.json ]]; then
     # JSON: Use jsonBody with parsed content
-    echo "Inlining JSON body from: $body_file_path"
+    echo "  Inlining JSON body from: $body_file_path" >&2
     echo "$stub_json" | jq --slurpfile body "$body_file_path" '
       del(.response.bodyFileName) |
       .response.jsonBody = $body[0]
     ' > "$tmp_json"
   else
     # Other files: Use body as string
-    echo "Inlining text body from: $body_file_path"
+    echo "  Inlining text body from: $body_file_path" >&2
     echo "$stub_json" | jq --rawfile body "$body_file_path" '
       del(.response.bodyFileName) |
       .response.body = $body
