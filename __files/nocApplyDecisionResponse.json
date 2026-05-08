@@ -8,24 +8,24 @@
     },
     "respondent1OrganisationPolicy": {
       "Organisation": {
-        "OrganisationID": "Q1KOKP2",
-        "OrganisationName": "Civil - Organisation 1"
+        "OrganisationID": "79ZRSOU",
+        "OrganisationName": "Civil - Organisation 2"
       },
       "OrgPolicyReference": null,
       "OrgPolicyCaseAssignedRole": "[RESPONDENTSOLICITORONE]"
     },
     "respondent2OrganisationPolicy": {
       "Organisation": {
-        "OrganisationID": "79ZRSOU",
-        "OrganisationName": "Civil - Organisation 2"
+        "OrganisationID": "H2156A0",
+        "OrganisationName": "Civil - Organisation 3"
       },
       "OrgPolicyReference": null,
       "OrgPolicyCaseAssignedRole": "[RESPONDENTSOLICITORTWO]"
     },
     "applicant1OrganisationPolicy": {
       "Organisation": {
-        "OrganisationID": "QWERTY A",
-        "OrganisationName": "Applicant Organisation"
+        "OrganisationID": "Q1KOKP2",
+        "OrganisationName": "Civil - Organisation 1"
       },
       "OrgPolicyReference": null,
       "OrgPolicyCaseAssignedRole": "[APPLICANTSOLICITORONE]"
