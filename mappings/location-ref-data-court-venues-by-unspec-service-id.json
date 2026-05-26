@@ -1,0 +1,17 @@
+{
+  "request": {
+    "method": "GET",
+    "urlPath": "/refdata/location/court-venues",
+    "queryParameters": {
+      "service_code": { "equalTo": "AAA7" },
+      "location_type": { "equalTo": "Court" }
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "bodyFileName": "location-ref-data-court-venues-by-unspec-service-id.json"
+  }
+}
