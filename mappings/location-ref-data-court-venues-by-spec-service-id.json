@@ -3,8 +3,9 @@
     "method": "GET",
     "urlPath": "/refdata/location/court-venues",
     "queryParameters": {
-      "service_code": { "equalTo": "AAA6" },
-      "location_type": { "equalTo": "Court" }
+      "court_type_id": { "equalTo": "10" },
+      "location_type": { "equalTo": "Court" },
+      "service_code": { "equalTo": "AAA6" }
     }
   },
   "response": {
