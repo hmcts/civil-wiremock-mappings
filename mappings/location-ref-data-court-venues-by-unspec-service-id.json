@@ -13,6 +13,6 @@
     "headers": {
       "Content-Type": "application/json"
     },
-    "bodyFileName": "location-ref-data-court-venues.json"
+    "bodyFileName": "location-ref-data-court-venues-by-unspec-service-id.json"
   }
 }
